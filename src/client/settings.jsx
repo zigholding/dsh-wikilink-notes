@@ -8,7 +8,8 @@ const EMPTY = { includeWorkspace: true, vaults: [], discovered: [] };
 
 export function SettingsSection() {
   const [settings, setSettings] = useState(EMPTY);
-  const [draft, setDraft] = useState("");
+  const [text, setText] = useState("");
+  const [dirty, setDirty] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -28,6 +29,10 @@ export function SettingsSection() {
       gone = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!dirty) setText(settings.vaults.join("\n"));
+  }, [settings.vaults, dirty]);
 
   async function save(next) {
     setBusy(true);
@@ -58,8 +63,9 @@ export function SettingsSection() {
 
   return (
     <section className="wlc-settings">
+      <h3 className="wlc-settings-title">双链补全</h3>
       <p className="wlc-settings-lead">
-        输入 <code>[[</code> 时，从这些目录里的 Markdown 文件名补全。可以同时使用当前会话工作区和多个 Obsidian 仓库。
+        输入 <code>[[</code> 时按这些目录里的笔记名补全。每行写一个 Obsidian 仓库的绝对路径，目录里要有 <code>.obsidian</code>。
       </p>
       <label className="wlc-check">
         <input
@@ -70,42 +76,43 @@ export function SettingsSection() {
         />
         同时包含当前工作区
       </label>
-      <ul className="wlc-vaults">
-        {settings.vaults.length === 0 ? <li className="wlc-settings-muted">还没有添加仓库</li> : null}
-        {settings.vaults.map((path) => (
-          <li key={path}>
-            <span>{path}</span>
-            <button type="button" disabled={busy} onClick={() => save({ ...settings, vaults: settings.vaults.filter((item) => item !== path) })}>
-              移除
-            </button>
-          </li>
-        ))}
-      </ul>
       <form
-        className="wlc-add"
+        className="wlc-paths"
         onSubmit={(event) => {
           event.preventDefault();
-          const path = draft.trim();
-          if (!path || settings.vaults.includes(path)) return;
-          save({ ...settings, vaults: [...settings.vaults, path] }).then((saved) => {
-            if (saved) setDraft("");
+          const vaults = text.split(/\r?\n/u).map((line) => line.trim()).filter(Boolean);
+          save({ ...settings, vaults }).then((saved) => {
+            if (saved) setDirty(false);
           });
         }}
       >
-        <input
-          value={draft}
-          placeholder="D:\Notes\我的库"
+        <textarea
+          value={text}
+          rows={5}
+          spellCheck={false}
           aria-label="Obsidian 仓库路径"
-          onChange={(event) => setDraft(event.target.value)}
+          placeholder={"D:\\Notes\\工作\nD:\\Notes\\生活"}
+          onChange={(event) => {
+            setDirty(true);
+            setText(event.target.value);
+          }}
         />
-        <button type="submit" disabled={busy || draft.trim().length === 0}>添加</button>
+        <button type="submit" disabled={busy}>保存仓库</button>
       </form>
       {unused.length > 0 ? (
         <div className="wlc-discovered">
           <span>本机 Obsidian 里还有这些库</span>
           {unused.map((path) => (
-            <button key={path} type="button" disabled={busy} onClick={() => save({ ...settings, vaults: [...settings.vaults, path] })}>
-              加入 {path}
+            <button
+              key={path}
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                setDirty(true);
+                setText((current) => current.trim().length === 0 ? path : `${current.replace(/\s+$/u, "")}\n${path}`);
+              }}
+            >
+              填入 {path}
             </button>
           ))}
         </div>
@@ -129,21 +136,33 @@ function installSettingsStyles() {
   const style = document.createElement("style");
   style.id = id;
   style.textContent = `
-.wlc-settings { display: flex; flex-direction: column; gap: 12px; max-width: 640px; }
-.wlc-settings-lead, .wlc-settings-muted { color: var(--dsw-alias-fg-muted, rgba(246, 241, 232, 0.62)); font-size: 13px; }
+.wlc-settings { display: flex; flex-direction: column; gap: 12px; max-width: 640px; width: 100%; }
+.wlc-settings-title { margin: 0; font-size: 14px; font-weight: 600; }
+.wlc-settings-lead, .wlc-settings-muted { color: var(--dsw-alias-fg-muted, rgba(246, 241, 232, 0.62)); font-size: 13px; margin: 0; }
 .wlc-settings code { font-family: ui-monospace, monospace; }
 .wlc-check { display: flex; gap: 8px; align-items: center; }
-.wlc-vaults { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.wlc-vaults li, .wlc-add, .wlc-discovered { display: flex; gap: 8px; align-items: center; }
-.wlc-vaults span, .wlc-add input { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.wlc-add input, .wlc-settings button {
+.wlc-paths { display: flex; flex-direction: column; gap: 8px; align-items: stretch; }
+.wlc-paths textarea {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  min-height: 96px;
+  border-radius: 8px;
+  border: 1px solid var(--dsw-alias-border, rgba(255, 244, 224, 0.14));
+  background: transparent;
+  color: inherit;
+  padding: 8px 10px;
+  font: 13px/1.45 ui-monospace, "Sarasa Mono SC", monospace;
+}
+.wlc-discovered { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.wlc-settings button {
   border-radius: 8px;
   border: 1px solid var(--dsw-alias-border, rgba(255, 244, 224, 0.14));
   background: transparent;
   color: inherit;
   padding: 6px 10px;
+  align-self: flex-start;
 }
-.wlc-discovered { flex-wrap: wrap; }
 .wlc-settings-error { color: var(--dsw-alias-danger, #e07a5f); font-size: 13px; margin: 0; }
 `;
   document.head.appendChild(style);

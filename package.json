@@ -1,6 +1,6 @@
 {
   "name": "dsh-wikilink-completion",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "DeepSeek Harness 插件：在对话输入框输入 [[ 时提示笔记名称",
   "license": "MIT",
   "type": "module",

@@ -28,13 +28,18 @@ export function apply(ctx) {
       Picker,
     ),
   );
-  ctx.slots.inject("settings.section", () =>
+  registerSettings(ctx, "settings.general.item", { order: 40 });
+  registerSettings(ctx, "settings.section", { order: 48, label: () => "双链补全" });
+  registerSettings(ctx, "settings.plugins.tab", { order: 48, label: () => "双链补全" });
+}
+
+function registerSettings(ctx, name, extra) {
+  ctx.slots.inject(name, () =>
     ctx.slots.register(
       {
-        name: "settings.section",
+        name,
         id: "wikilink-completion",
-        order: 48,
-        label: () => "双链补全",
+        ...extra,
       },
       SettingsSection,
     ),
