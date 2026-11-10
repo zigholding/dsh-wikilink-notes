@@ -154,7 +154,7 @@ export function SettingsSection() {
             setServices(event.target.value);
           }}
         />
-        <label className="wlc-format-label" htmlFor="wlc-link-format">插入格式</label>
+        <label className="wlc-format-label" htmlFor="wlc-link-format">NoteChain 插入格式</label>
         <input
           id="wlc-link-format"
           value={format}
@@ -167,7 +167,7 @@ export function SettingsSection() {
           }}
         />
         <p className="wlc-settings-lead">
-          <code>{"${name}"}</code> 是笔记名，<code>{"${mcp}"}</code> 是 NoteChain 地址。本机笔记没有地址时，结尾的 <code>(from )</code> 会去掉。
+          只作用于 NoteChain 笔记。<code>{"${name}"}</code> 是笔记名，<code>{"${mcp}"}</code> 是 MCP 地址。本机和工作区笔记仍插入 <code>[[笔记名]]</code>。
         </p>
         <button type="submit" disabled={busy}>保存</button>
       </form>

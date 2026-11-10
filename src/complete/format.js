@@ -1,4 +1,6 @@
-/** How a chosen note is written into the composer. */
+/** How a NoteChain note is written into the composer. Local notes stay plain wikilinks. */
+import { sanitizeLink } from "./trigger.js";
+
 export const DEFAULT_LINK_FORMAT = "[[${name}]](from ${mcp})";
 
 /**
@@ -34,4 +36,16 @@ export function formatLink(template, note) {
   let rendered = format.replaceAll("${name}", name).replaceAll("${mcp}", mcp);
   if (!mcp) rendered = rendered.replace(/[ \t]*\(from\s*\)/gu, "");
   return rendered.trim();
+}
+
+/**
+ * Custom templates apply only to NoteChain notes. Workspace and vault notes
+ * stay `[[link]]`, including a folder prefix when names collide.
+ * @param {unknown} template
+ * @param {{ name?: string, link?: string, mcp?: string, origin?: string }} note
+ */
+export function renderInsertion(template, note) {
+  const mcp = String(note.mcp ?? note.origin ?? "").replace(/[\r\n]/gu, "").trim();
+  if (!mcp) return `[[${sanitizeLink(note.link || note.name || "")}]]`;
+  return formatLink(template, { name: note.name || note.link || "", mcp });
 }

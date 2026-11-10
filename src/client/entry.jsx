@@ -5,7 +5,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { rankNotes } from "../complete/rank.js";
-import { formatLink } from "../complete/format.js";
+import { renderInsertion } from "../complete/format.js";
 import { findOpenTrigger, insertRendered, replaceTrigger } from "../complete/trigger.js";
 import { SettingsBoundary } from "./settings.jsx";
 
@@ -129,7 +129,7 @@ export function Picker({ sessionId, useInput, inputActions }) {
     if (!trigger || typeof inputActions?.setDraft !== "function") return;
     const rendered = typeof note.insert === "string" && note.insert.trim()
       ? note.insert
-      : formatLink("[[${name}]](from ${mcp})", { name: note.name || note.link, mcp: note.origin || "" });
+      : renderInsertion("[[${name}]](from ${mcp})", note);
     inputActions.setDraft(insertRendered(draft, trigger, rendered) || replaceTrigger(draft, trigger, note.link, note.origin));
   };
 

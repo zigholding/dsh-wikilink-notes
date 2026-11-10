@@ -5,7 +5,7 @@
  */
 import { realpath } from "node:fs/promises";
 import { basename } from "node:path";
-import { checkFormat, formatLink } from "../complete/format.js";
+import { checkFormat, renderInsertion } from "../complete/format.js";
 import { listNotes } from "../complete/index-notes.js";
 import { qualifyNames } from "../complete/sources.js";
 import { normalizeServiceUrl, queryNoteChain, serviceLabel } from "./notechain.js";
@@ -264,7 +264,7 @@ export async function collectNotes(settings, cwd, maxNotes) {
   return {
     notes: qualifyNames(notes).map((note) => ({
       ...note,
-      insert: formatLink(settings.linkFormat, { name: note.name, mcp: note.origin || "" }),
+      insert: renderInsertion(settings.linkFormat, note),
     })),
     truncated,
     warnings,
