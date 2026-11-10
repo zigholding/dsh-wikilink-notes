@@ -15,15 +15,17 @@ npm run preview
 
 打开本机预览地址后，在底部输入框输入 `[[`。`↑` `↓` 移动，`Enter` 插入，`Esc` 关闭。没有打开补全时，`Enter` 发送，`Shift+Enter` 换行。
 
-## 装进 DeepSeek Harness
+## 装进 DSH Desktop
 
-需要 Web profile。在本仓库根目录：
+Desktop 的 `desktop` profile 只归桌面应用管。先完全退出应用（托盘里选退出，不要只关窗口），再用桌面应用自带的 `dsh`，在本仓库根目录执行：
 
 ```sh
-dsh plugin --profile web add ./
+dsh plugin --profile desktop add .
 ```
 
-重启 Web 服务并刷新页面。插件行写在包内的 `cordis.patch.yml`，`dsh plugin add` 会把它放进 profile。
+Windows 上如果提示找不到 `dsh`，打开应用菜单里的「管理 dsh 命令」并安装，然后新开一个终端再执行上面的命令。装完重新打开 DSH Desktop。在已经选了工作区的对话里输入 `[[`。
+
+`dsh plugin --profile web add .` 只会进 Web profile，Desktop 里看不到。
 
 工作区里的 `.md` / `.markdown` 会进入列表。名称取文件名；前言里的 `aliases` 和第一级标题只用来搜索。同名笔记会插入带文件夹的链接，例如 `[[工作/笔记]]`。
 
@@ -45,7 +47,7 @@ npm test
 npm run build
 ```
 
-`lib/index.js` 和 `lib/client.js` 是安装时加载的产物，改完 `src/` 要重新构建。
+`lib/index.js` 和 `lib/client.js` 是安装时加载的产物，改完 `src/` 要重新构建。Desktop 和 Web 用的是同一个包，差别只在 `--profile`。
 
 ## 限制
 
