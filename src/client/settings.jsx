@@ -3,8 +3,15 @@
  * directories that contain an `.obsidian` folder.
  */
 import React, { useEffect, useState } from "react";
+import { DEFAULT_LINK_FORMAT } from "../complete/format.js";
 
-const EMPTY = { includeWorkspace: true, vaults: [], noteChains: [], discovered: [] };
+const EMPTY = {
+  includeWorkspace: true,
+  vaults: [],
+  noteChains: [],
+  linkFormat: DEFAULT_LINK_FORMAT,
+  discovered: [],
+};
 
 export class SettingsBoundary extends React.Component {
   constructor(props) {
@@ -28,6 +35,7 @@ export function SettingsSection() {
   const [settings, setSettings] = useState(EMPTY);
   const [text, setText] = useState("");
   const [services, setServices] = useState("");
+  const [format, setFormat] = useState(DEFAULT_LINK_FORMAT);
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -53,8 +61,9 @@ export function SettingsSection() {
     if (!dirty) {
       setText(settings.vaults.join("\n"));
       setServices(settings.noteChains.join("\n"));
+      setFormat(settings.linkFormat || DEFAULT_LINK_FORMAT);
     }
-  }, [settings.vaults, settings.noteChains, dirty]);
+  }, [settings.vaults, settings.noteChains, settings.linkFormat, dirty]);
 
   function lines(value) {
     return value.split(/\r?\n/u).map((line) => line.trim()).filter(Boolean);
@@ -71,6 +80,7 @@ export function SettingsSection() {
           includeWorkspace: next.includeWorkspace,
           vaults: next.vaults,
           noteChains: next.noteChains,
+          linkFormat: next.linkFormat,
         }),
       });
       const payload = await response.json().catch(() => ({}));
@@ -103,6 +113,7 @@ export function SettingsSection() {
             includeWorkspace: event.target.checked,
             vaults: lines(text),
             noteChains: lines(services),
+            linkFormat: format,
           })}
         />
         同时包含当前工作区
@@ -115,6 +126,7 @@ export function SettingsSection() {
             includeWorkspace: settings.includeWorkspace,
             vaults: lines(text),
             noteChains: lines(services),
+            linkFormat: format,
           }).then((saved) => {
             if (saved) setDirty(false);
           });
@@ -142,6 +154,21 @@ export function SettingsSection() {
             setServices(event.target.value);
           }}
         />
+        <label className="wlc-format-label" htmlFor="wlc-link-format">插入格式</label>
+        <input
+          id="wlc-link-format"
+          value={format}
+          spellCheck={false}
+          aria-label="插入格式"
+          placeholder={DEFAULT_LINK_FORMAT}
+          onChange={(event) => {
+            setDirty(true);
+            setFormat(event.target.value);
+          }}
+        />
+        <p className="wlc-settings-lead">
+          <code>{"${name}"}</code> 是笔记名，<code>{"${mcp}"}</code> 是 NoteChain 地址。本机笔记没有地址时，结尾的 <code>(from )</code> 会去掉。
+        </p>
         <button type="submit" disabled={busy}>保存</button>
       </form>
       {unused.length > 0 ? (
@@ -172,6 +199,9 @@ function normalize(payload) {
     includeWorkspace: payload?.includeWorkspace !== false,
     vaults: Array.isArray(payload?.vaults) ? payload.vaults.filter((item) => typeof item === "string") : [],
     noteChains: Array.isArray(payload?.noteChains) ? payload.noteChains.filter((item) => typeof item === "string") : [],
+    linkFormat: typeof payload?.linkFormat === "string" && payload.linkFormat.includes("${name}")
+      ? payload.linkFormat
+      : DEFAULT_LINK_FORMAT,
     discovered: Array.isArray(payload?.discovered) ? payload.discovered.filter((item) => typeof item === "string") : [],
   };
 }
@@ -188,6 +218,17 @@ function installSettingsStyles() {
 .wlc-settings code { font-family: ui-monospace, monospace; }
 .wlc-check { display: flex; gap: 8px; align-items: center; }
 .wlc-paths { display: flex; flex-direction: column; gap: 8px; align-items: stretch; }
+.wlc-format-label { font-size: 13px; }
+.wlc-paths input {
+  width: 100%;
+  box-sizing: border-box;
+  border-radius: 8px;
+  border: 1px solid var(--dsw-alias-border, rgba(255, 244, 224, 0.14));
+  background: transparent;
+  color: inherit;
+  padding: 8px 10px;
+  font: 13px/1.45 ui-monospace, "Sarasa Mono SC", monospace;
+}
 .wlc-paths textarea {
   width: 100%;
   box-sizing: border-box;

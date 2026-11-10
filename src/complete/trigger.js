@@ -51,7 +51,18 @@ export function replaceTrigger(text, trigger, link, origin = "") {
   const safe = sanitizeLink(link);
   const from = sanitizeOrigin(origin);
   const suffix = from ? `(from ${from})` : "";
-  return `${text.slice(0, trigger.start)}[[${safe}]]${suffix}${text.slice(trigger.end)}`;
+  return insertRendered(text, trigger, `[[${safe}]]${suffix}`);
+}
+
+/**
+ * Splice an already rendered completion into the draft.
+ * @param {string} text
+ * @param {{ start: number, end: number }} trigger
+ * @param {string} rendered
+ */
+export function insertRendered(text, trigger, rendered) {
+  const safe = String(rendered).replace(/[\n\r]/gu, "").trim();
+  return `${text.slice(0, trigger.start)}${safe}${text.slice(trigger.end)}`;
 }
 
 /** @param {string} link */

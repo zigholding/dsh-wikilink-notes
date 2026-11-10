@@ -5,7 +5,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { rankNotes } from "../complete/rank.js";
-import { findOpenTrigger, replaceTrigger } from "../complete/trigger.js";
+import { formatLink } from "../complete/format.js";
+import { findOpenTrigger, insertRendered, replaceTrigger } from "../complete/trigger.js";
 import { SettingsBoundary } from "./settings.jsx";
 
 const STYLE_ID = "dsh-wikilink-completion-style";
@@ -126,7 +127,10 @@ export function Picker({ sessionId, useInput, inputActions }) {
 
   const pick = (note) => {
     if (!trigger || typeof inputActions?.setDraft !== "function") return;
-    inputActions.setDraft(replaceTrigger(draft, trigger, note.link, note.origin));
+    const rendered = typeof note.insert === "string" && note.insert.trim()
+      ? note.insert
+      : formatLink("[[${name}]](from ${mcp})", { name: note.name || note.link, mcp: note.origin || "" });
+    inputActions.setDraft(insertRendered(draft, trigger, rendered) || replaceTrigger(draft, trigger, note.link, note.origin));
   };
 
   useEffect(() => {
@@ -310,7 +314,8 @@ function isNote(value) {
     value.name.length > 0 &&
     value.link.length > 0 &&
     value.link.length < 300 &&
-    (value.origin === undefined || (typeof value.origin === "string" && value.origin.length < 120))
+    (value.origin === undefined || (typeof value.origin === "string" && value.origin.length < 120)) &&
+    (value.insert === undefined || (typeof value.insert === "string" && value.insert.length < 400))
   );
 }
 

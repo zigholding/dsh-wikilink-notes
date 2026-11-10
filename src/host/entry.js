@@ -5,6 +5,7 @@
  */
 import { realpath } from "node:fs/promises";
 import { basename } from "node:path";
+import { checkFormat, formatLink } from "../complete/format.js";
 import { listNotes } from "../complete/index-notes.js";
 import { qualifyNames } from "../complete/sources.js";
 import { normalizeServiceUrl, queryNoteChain, serviceLabel } from "./notechain.js";
@@ -120,7 +121,13 @@ async function handleSettings(ctx, req, res, file) {
     includeWorkspace: payload?.includeWorkspace !== false,
     vaults: Array.isArray(payload?.vaults) ? payload.vaults : [],
     noteChains: Array.isArray(payload?.noteChains) ? payload.noteChains : [],
+    linkFormat: payload?.linkFormat,
   };
+  const format = checkFormat(draft.linkFormat);
+  if (!format.ok) {
+    send(res, 400, { error: format.error });
+    return;
+  }
   if (draft.vaults.length > 16) {
     send(res, 400, { error: "最多添加 16 个仓库" });
     return;
@@ -149,7 +156,12 @@ async function handleSettings(ctx, req, res, file) {
     }
     if (!noteChains.includes(parsed.url)) noteChains.push(parsed.url);
   }
-  const saved = await writeSettings(file, { includeWorkspace: draft.includeWorkspace, vaults, noteChains });
+  const saved = await writeSettings(file, {
+    includeWorkspace: draft.includeWorkspace,
+    vaults,
+    noteChains,
+    linkFormat: format.format,
+  });
   cache.clear();
   send(res, 200, { ...saved, discovered: await discoverVaults(obsidianConfigPath()) });
 }
@@ -250,7 +262,10 @@ export async function collectNotes(settings, cwd, maxNotes) {
     }
   }
   return {
-    notes: qualifyNames(notes),
+    notes: qualifyNames(notes).map((note) => ({
+      ...note,
+      insert: formatLink(settings.linkFormat, { name: note.name, mcp: note.origin || "" }),
+    })),
     truncated,
     warnings,
     status: "ready",

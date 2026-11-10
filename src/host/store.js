@@ -5,6 +5,7 @@
 import { mkdir, readFile, realpath, rename, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join } from "node:path";
+import { normalizeFormat } from "../complete/format.js";
 import { normalizeServiceUrl } from "./notechain.js";
 
 export const MAX_VAULTS = 16;
@@ -13,6 +14,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   includeWorkspace: true,
   vaults: Object.freeze([]),
   noteChains: Object.freeze([]),
+  linkFormat: "[[${name}]](from ${mcp})",
 });
 
 /**
@@ -35,7 +37,7 @@ export async function readSettings(file) {
     const parsed = JSON.parse(await readFile(file, "utf8"));
     return normalizeSettings(parsed);
   } catch {
-    return { includeWorkspace: true, vaults: [], noteChains: [] };
+    return { includeWorkspace: true, vaults: [], noteChains: [], linkFormat: normalizeFormat("") };
   }
 }
 
@@ -82,7 +84,7 @@ export function normalizeSettings(value) {
     noteChains.push(parsed.url);
     if (noteChains.length >= 8) break;
   }
-  return { includeWorkspace, vaults, noteChains };
+  return { includeWorkspace, vaults, noteChains, linkFormat: normalizeFormat(record.linkFormat) };
 }
 
 /**
