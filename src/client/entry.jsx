@@ -124,9 +124,9 @@ export function Picker({ sessionId, useInput, inputActions }) {
     setActive(0);
   }, [trigger?.query]);
 
-  const pick = (link) => {
+  const pick = (note) => {
     if (!trigger || typeof inputActions?.setDraft !== "function") return;
-    inputActions.setDraft(replaceTrigger(draft, trigger, link));
+    inputActions.setDraft(replaceTrigger(draft, trigger, note.link, note.origin));
   };
 
   useEffect(() => {
@@ -145,7 +145,7 @@ export function Picker({ sessionId, useInput, inputActions }) {
         event.preventDefault();
         event.stopPropagation();
         const hit = ranked[Math.min(active, ranked.length - 1)];
-        if (hit) pick(hit.note.link);
+        if (hit) pick(hit.note);
       } else if (event.key === "Escape") {
         event.preventDefault();
         event.stopPropagation();
@@ -214,7 +214,7 @@ function renderMenu({ ranked, active, status, message, onHover, onPick }) {
     <>
       {ranked.map((item, index) => (
         <button
-          key={item.note.link}
+          key={`${item.note.origin ?? ""}:${item.note.link}`}
           type="button"
           role="option"
           aria-selected={index === active}
@@ -222,7 +222,7 @@ function renderMenu({ ranked, active, status, message, onHover, onPick }) {
           data-active={index === active ? "true" : "false"}
           onMouseDown={(event) => {
             event.preventDefault();
-            onPick(item.note.link);
+            onPick(item.note);
           }}
           onMouseEnter={() => onHover(index)}
         >
@@ -309,7 +309,8 @@ function isNote(value) {
     typeof value.link === "string" &&
     value.name.length > 0 &&
     value.link.length > 0 &&
-    value.link.length < 300
+    value.link.length < 300 &&
+    (value.origin === undefined || (typeof value.origin === "string" && value.origin.length < 120))
   );
 }
 

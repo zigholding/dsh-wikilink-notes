@@ -243,7 +243,7 @@ export async function collectNotes(settings, cwd, maxNotes) {
     }
     try {
       const listed = await queryNoteChain(service, { limit: Math.max(1, maxNotes - notes.length) });
-      for (const note of listed) notes.push({ ...note, vault: label });
+      for (const note of listed) notes.push({ ...note, vault: label, origin: label });
     } catch (error) {
       const message = error instanceof Error ? error.message : "查询失败";
       warnings.push(`${label}：${message}`);

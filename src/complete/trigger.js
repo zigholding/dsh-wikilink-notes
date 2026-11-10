@@ -45,15 +45,23 @@ export function findOpenTrigger(text, caret = text.length) {
  * @param {string} text
  * @param {{ start: number, end: number }} trigger
  * @param {string} link
+ * @param {string} [origin] NoteChain host, inserted after the wikilink.
  */
-export function replaceTrigger(text, trigger, link) {
+export function replaceTrigger(text, trigger, link, origin = "") {
   const safe = sanitizeLink(link);
-  return `${text.slice(0, trigger.start)}[[${safe}]]${text.slice(trigger.end)}`;
+  const from = sanitizeOrigin(origin);
+  const suffix = from ? `(from ${from})` : "";
+  return `${text.slice(0, trigger.start)}[[${safe}]]${suffix}${text.slice(trigger.end)}`;
 }
 
 /** @param {string} link */
 export function sanitizeLink(link) {
   return String(link).replace(/[\[\]\n\r]/g, "").trim();
+}
+
+/** @param {string} origin */
+function sanitizeOrigin(origin) {
+  return String(origin).replace(/[()[\]\n\r]/g, "").trim();
 }
 
 /**

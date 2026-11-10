@@ -14,6 +14,15 @@ test("uses the query between the brackets and the caret", () => {
   assert.equal(replaceTrigger(text, hit, "曼谷街头美食"), "总结 [[曼谷街头美食]]");
 });
 
+test("writes a NoteChain host after the wikilink", () => {
+  const text = "[[周会";
+  const hit = findOpenTrigger(text);
+  assert.equal(
+    replaceTrigger(text, hit, "周会纪要", "192.168.1.8:3000"),
+    "[[周会纪要]](from 192.168.1.8:3000)",
+  );
+});
+
 test("accepts a fullwidth opener and still inserts ascii brackets", () => {
   const hit = findOpenTrigger("【【周会", 4);
   assert.equal(hit?.fullwidth, true);

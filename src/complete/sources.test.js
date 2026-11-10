@@ -18,6 +18,17 @@ test("labels a workspace note when it collides with a vault note", () => {
   );
 });
 
+test("leaves a NoteChain note as a plain link when a local note has the same name", () => {
+  const notes = qualifyNames([
+    { name: "周会纪要", link: "周会纪要", vault: "" },
+    { name: "周会纪要", link: "周会纪要", vault: "192.168.1.8:3000", origin: "192.168.1.8:3000" },
+  ]);
+  assert.deepEqual(
+    notes.map((note) => note.link),
+    ["周会纪要", "周会纪要"],
+  );
+});
+
 test("prefixes the vault when the same name comes from two libraries", () => {
   const notes = qualifyNames([
     { name: "周会纪要", link: "周会纪要", vault: "工作" },
