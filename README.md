@@ -1,6 +1,6 @@
 # dsh-wikilink-completion
 
-DeepSeek Harness 插件。在 Web 对话输入框里输入 `[[`，会列出当前工作区的笔记名称；方向键选择，回车插入 `[[笔记名]]`。
+DeepSeek Harness 插件。在对话输入框里输入 `[[`，会列出笔记名称；方向键选择，回车插入 `[[笔记名]]`。默认扫描当前会话工作区里的 Markdown。在设置里的「双链补全」可以再添加多个 Obsidian 仓库，也可以关掉工作区扫描。
 
 交互参照 Obsidian 的双链补全：未闭合的 `[[` 打开列表，继续输入会按名称、别名和文件夹过滤，已经闭合的链接不再提示。
 
@@ -27,7 +27,9 @@ Windows 上如果提示找不到 `dsh`，打开应用菜单里的「管理 dsh �
 
 `dsh plugin --profile web add .` 只会进 Web profile，Desktop 里看不到。
 
-工作区里的 `.md` / `.markdown` 会进入列表。名称取文件名；前言里的 `aliases` 和第一级标题只用来搜索。同名笔记会插入带文件夹的链接，例如 `[[工作/笔记]]`。
+默认扫描当前会话工作区里的 `.md` / `.markdown`。打开 DSH 的设置，进入「双链补全」：勾选是否包含当前工作区，填写一个或多个 Obsidian 仓库的绝对路径（目录里要有 `.obsidian`）。本机 Obsidian 已经打开过的库会列出来，点一下就能加入。设置写在 `$DSH_HOME/wikilink-completion.json`（没设 `DSH_HOME` 时是 `~/.dsh/wikilink-completion.json`）。
+
+名称取文件名；前言里的 `aliases` 和第一级标题只用来搜索。同一个库里的同名笔记会插入带文件夹的链接，例如 `[[工作/笔记]]`。不同库里的同名笔记会再带上库名，例如 `[[日记/周会纪要]]`。
 
 可选上限写在 profile 的插件配置里：
 
@@ -37,7 +39,7 @@ Windows 上如果提示找不到 `dsh`，打开应用菜单里的「管理 dsh �
     maxNotes: 8000
 ```
 
-接口是 `GET /api/wikilink-completion/notes?sessionId=`。目录只从会话自己的工作区读取，不接受浏览器传来的路径。
+笔记列表是 `GET /api/wikilink-completion/notes?sessionId=`。设置是 `GET` / `PUT /api/wikilink-completion/settings`。补全请求不接受浏览器传来的目录；仓库路径只在保存设置时提交，并且必须是带 `.obsidian` 的绝对路径。
 
 ## 开发
 
@@ -51,7 +53,7 @@ npm run build
 
 ## 限制
 
-- 面向 Web profile。会话还没有工作区时，列表会说明这一点。
+- Desktop 和 Web 都能用。关掉工作区、又还没添加仓库时，列表会说明去设置里添加。
 - 输入法如果会把 `[` 自动配成 `[]`，连续的 `[[` 就打不出来，需要关掉符号自动补全。
 - 代码块里的 `[[` 不提示。查询里出现 `#`、`|` 或 `]` 时列表关闭。
 - 插件只插入笔记名，不会把正文放进发给模型的提示词。

@@ -1,9 +1,20 @@
 /**
- * Host half: list markdown note names for the session workspace.
- * The browser asks with a session id; the directory always comes from the
- * session header, never from the request.
+ * Host half: list markdown note names for the session workspace and for the
+ * Obsidian vaults saved in the plugin settings. Vault paths are checked on
+ * this side; the browser cannot choose an arbitrary directory at query time.
  */
+import { realpath } from "node:fs/promises";
+import { basename } from "node:path";
 import { listNotes } from "../complete/index-notes.js";
+import { qualifyNames } from "../complete/sources.js";
+import {
+  discoverVaults,
+  inspectVault,
+  obsidianConfigPath,
+  readSettings,
+  settingsFile,
+  writeSettings,
+} from "./store.js";
 
 export const name = "dsh-wikilink-completion";
 export const inject = ["webServer", "sessions"];
@@ -17,16 +28,23 @@ const cache = new Map();
  */
 export function apply(ctx, config = {}) {
   const maxNotes = clampLimit(config.maxNotes);
+  const file = settingsFile();
   ctx.effect(() => {
-    const dispose = ctx.webServer.register({
+    const notes = ctx.webServer.register({
       kind: "exact",
       path: "/api/wikilink-completion/notes",
-      handler: (req, res) => handleNotes(ctx, req, res, maxNotes),
+      handler: (req, res) => handleNotes(ctx, req, res, maxNotes, file),
+    });
+    const settings = ctx.webServer.register({
+      kind: "exact",
+      path: "/api/wikilink-completion/settings",
+      handler: (req, res) => handleSettings(ctx, req, res, file),
     });
     return () => {
-      if (typeof dispose === "function") dispose();
+      if (typeof notes === "function") notes();
+      if (typeof settings === "function") settings();
     };
-  }, "wikilink-completion: notes route");
+  }, "wikilink-completion: routes");
 }
 
 /**
@@ -44,7 +62,7 @@ function clampLimit(value) {
  * @param {import("node:http").ServerResponse} res
  * @param {number} maxNotes
  */
-async function handleNotes(ctx, req, res, maxNotes) {
+async function handleNotes(ctx, req, res, maxNotes, file) {
   if (req.method !== "GET") {
     send(res, 405, { error: "method-not-allowed" });
     return;
@@ -58,14 +76,10 @@ async function handleNotes(ctx, req, res, maxNotes) {
     send(res, 400, { error: "expected-session" });
     return;
   }
-  const cwd = sessionCwd(ctx, sessionId);
-  if (cwd === null) {
-    send(res, 200, { notes: [], truncated: false, status: "no-workspace" });
-    return;
-  }
   try {
-    const indexed = await cachedNotes(cwd, maxNotes);
-    send(res, 200, { notes: indexed.notes, truncated: indexed.truncated, status: "ready" });
+    const settings = await readSettings(file);
+    const indexed = await cachedNotes(settings, sessionCwd(ctx, sessionId), maxNotes);
+    send(res, 200, indexed);
   } catch (error) {
     ctx.logger?.warn?.(error);
     send(res, 500, { error: "index-failed" });
@@ -73,20 +87,153 @@ async function handleNotes(ctx, req, res, maxNotes) {
 }
 
 /**
- * @param {string} cwd
+ * @param {any} ctx
+ * @param {import("node:http").IncomingMessage} req
+ * @param {import("node:http").ServerResponse} res
+ * @param {string} file
+ */
+async function handleSettings(ctx, req, res, file) {
+  if (!isTrusted(ctx, req)) {
+    send(res, 403, { error: "forbidden" });
+    return;
+  }
+  if (req.method === "GET") {
+    const settings = await readSettings(file);
+    const discovered = await discoverVaults(obsidianConfigPath());
+    send(res, 200, { ...settings, discovered });
+    return;
+  }
+  if (req.method !== "PUT") {
+    send(res, 405, { error: "method-not-allowed" });
+    return;
+  }
+  let payload;
+  try {
+    payload = JSON.parse(await readBody(req));
+  } catch {
+    send(res, 400, { error: "请求读不了" });
+    return;
+  }
+  const draft = {
+    includeWorkspace: payload?.includeWorkspace !== false,
+    vaults: Array.isArray(payload?.vaults) ? payload.vaults : [],
+  };
+  if (draft.vaults.length > 16) {
+    send(res, 400, { error: "最多添加 16 个仓库" });
+    return;
+  }
+  /** @type {string[]} */
+  const vaults = [];
+  for (const item of draft.vaults) {
+    const inspected = await inspectVault(item);
+    if (!inspected.ok) {
+      send(res, 400, { error: `${item}: ${inspected.error}` });
+      return;
+    }
+    if (!vaults.includes(inspected.path)) vaults.push(inspected.path);
+  }
+  const saved = await writeSettings(file, { includeWorkspace: draft.includeWorkspace, vaults });
+  cache.clear();
+  send(res, 200, { ...saved, discovered: await discoverVaults(obsidianConfigPath()) });
+}
+
+/**
+ * @param {{ includeWorkspace: boolean, vaults: string[] }} settings
+ * @param {string | null} cwd
  * @param {number} maxNotes
  */
-async function cachedNotes(cwd, maxNotes) {
-  const hit = cache.get(cwd);
+async function cachedNotes(settings, cwd, maxNotes) {
+  const key = JSON.stringify({ settings, cwd, maxNotes });
+  const hit = cache.get(key);
   const now = Date.now();
-  if (hit && hit.maxNotes === maxNotes && now - hit.at < CACHE_MS) return hit.value;
-  const value = await listNotes(cwd, { maxNotes });
-  cache.set(cwd, { at: now, maxNotes, value });
+  if (hit && now - hit.at < CACHE_MS) return hit.value;
+  const value = await collectNotes(settings, cwd, maxNotes);
+  cache.set(key, { at: now, value });
   if (cache.size > 40) {
     const oldest = cache.keys().next().value;
     if (oldest !== undefined) cache.delete(oldest);
   }
   return value;
+}
+
+/**
+ * @param {{ includeWorkspace: boolean, vaults: string[] }} settings
+ * @param {string | null} cwd
+ * @param {number} maxNotes
+ */
+export async function collectNotes(settings, cwd, maxNotes) {
+  /** @type {Array<{ vault: string, root: string }>} */
+  const sources = [];
+  const seen = new Set();
+  const warnings = [];
+  for (const path of settings.vaults) {
+    try {
+      const root = await realpath(path);
+      if (seen.has(root)) continue;
+      seen.add(root);
+      sources.push({ vault: basename(root), root });
+    } catch {
+      warnings.push(`读不到仓库 ${path}`);
+    }
+  }
+  if (settings.includeWorkspace && cwd) {
+    try {
+      const root = await realpath(cwd);
+      if (!seen.has(root)) sources.push({ vault: "", root });
+    } catch {
+      warnings.push("当前工作区读不到");
+    }
+  }
+  if (sources.length === 0) {
+    return {
+      notes: [],
+      truncated: false,
+      warnings,
+      status: settings.includeWorkspace ? "no-workspace" : "no-vaults",
+      includeWorkspace: settings.includeWorkspace,
+      vaults: settings.vaults,
+    };
+  }
+  /** @type {Array<{ name: string, link: string, folder: string, aliases: string[], vault: string }>} */
+  const notes = [];
+  let truncated = false;
+  for (const source of sources) {
+    const label = source.vault || "工作区";
+    try {
+      const listed = await listNotes(source.root, { maxNotes: Math.max(1, maxNotes - notes.length) });
+      for (const note of listed.notes) notes.push({ ...note, vault: source.vault || note.vault || "" });
+      if (listed.truncated || notes.length >= maxNotes) {
+        truncated = true;
+        break;
+      }
+    } catch {
+      warnings.push(`读不到${label}里的笔记`);
+    }
+  }
+  return {
+    notes: qualifyNames(notes),
+    truncated,
+    warnings,
+    status: "ready",
+    includeWorkspace: settings.includeWorkspace,
+    vaults: settings.vaults,
+  };
+}
+
+/**
+ * @param {import("node:http").IncomingMessage} req
+ */
+async function readBody(req) {
+  /** @type {Buffer[]} */
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of req) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    size += buffer.length;
+    if (size > 65_536) throw new Error("too-large");
+    chunks.push(buffer);
+  }
+  return Buffer.concat(chunks).toString("utf8");
 }
 
 /**

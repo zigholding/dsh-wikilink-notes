@@ -94,6 +94,7 @@ export function assignLinks(files) {
         link,
         folder: file.folder,
         aliases,
+        vault: file.vault || "",
       };
     })
     .sort((a, b) => a.name.localeCompare(b.name, "zh"));

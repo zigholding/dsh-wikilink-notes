@@ -5,7 +5,7 @@
  */
 
 /**
- * @typedef {{ name: string, link: string, folder?: string, aliases?: string[] }} NoteRecord
+ * @typedef {{ name: string, link: string, folder?: string, vault?: string, aliases?: string[] }} NoteRecord
  * @typedef {{ note: NoteRecord, score: number, hint: string }} RankedNote
  */
 
@@ -64,6 +64,8 @@ function bestField(note, term) {
   }
   const folderScore = Math.min(scoreField(note.folder ?? "", term), 420);
   if (folderScore > score) score = folderScore;
+  const vaultScore = Math.min(scoreField(note.vault ?? "", term), 420);
+  if (vaultScore > score) score = vaultScore;
   return { score, hint };
 }
 

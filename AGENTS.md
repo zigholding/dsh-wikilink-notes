@@ -4,6 +4,8 @@ Before changing plugin code, read https://dsh.pub/develop-plugin.md completely. 
 runtime contract and verification boundaries there; this repository's own security, testing, and
 release rules remain authoritative.
 
-This package targets the Web profile. `[[` completion is detected from the composer draft and
-drawn in `conversation.input.overlay`. Note names come from the session workspace via
-`GET /api/wikilink-completion/notes`. Do not take a filesystem path from the browser.
+`[[` completion is detected from the composer draft and drawn in `conversation.input.overlay`.
+Note names come from the session workspace and from Obsidian vaults saved in
+`$DSH_HOME/wikilink-completion.json`, via `GET /api/wikilink-completion/notes`. Vault paths are
+accepted only on `PUT /api/wikilink-completion/settings`, and only when the directory contains
+`.obsidian`. The notes request must not take a filesystem path from the browser.

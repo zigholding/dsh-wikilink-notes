@@ -6,6 +6,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { rankNotes } from "../complete/rank.js";
 import { findOpenTrigger, replaceTrigger } from "../complete/trigger.js";
+import { SettingsSection } from "./settings.jsx";
 
 const STYLE_ID = "dsh-wikilink-completion-style";
 const noteCache = new Map();
@@ -25,6 +26,17 @@ export function apply(ctx) {
         order: 24,
       },
       Picker,
+    ),
+  );
+  ctx.slots.inject("settings.section", () =>
+    ctx.slots.register(
+      {
+        name: "settings.section",
+        id: "wikilink-completion",
+        order: 48,
+        label: () => "双链补全",
+      },
+      SettingsSection,
     ),
   );
 }
@@ -56,6 +68,15 @@ export function Picker({ sessionId, useInput, inputActions }) {
     };
   }, [draft]);
 
+  useEffect(() => {
+    const refresh = () => {
+      noteCache.clear();
+      setIndex({ status: "idle", notes: [], message: "" });
+    };
+    window.addEventListener("wlc-settings-saved", refresh);
+    return () => window.removeEventListener("wlc-settings-saved", refresh);
+  }, []);
+
   const trigger = useMemo(() => findOpenTrigger(draft, caret), [draft, caret]);
   const open = !suppressed && trigger !== null && input !== undefined;
 
@@ -77,9 +98,9 @@ export function Picker({ sessionId, useInput, inputActions }) {
       .then((payload) => {
         const notes = Array.isArray(payload?.notes) ? payload.notes.filter(isNote) : [];
         const next = {
-          status: payload?.status === "no-workspace" ? "empty" : "ready",
+          status: payload?.status === "no-workspace" || payload?.status === "no-vaults" ? "empty" : "ready",
           notes,
-          message: payload?.status === "no-workspace" ? "当前会话还没有工作区" : "",
+          message: indexMessage(payload),
         };
         noteCache.set(sessionId, { at: Date.now(), ...next });
         if (!controller.signal.aborted) setIndex(next);
@@ -207,7 +228,7 @@ function renderMenu({ ranked, active, status, message, onHover, onPick }) {
           <span className="wlc-copy">
             <span className="wlc-name">{item.note.name}</span>
             <span className="wlc-meta">
-              {item.note.folder ? item.note.folder : "工作区"}
+              {[item.note.vault, item.note.folder].filter(Boolean).join(" / ") || "工作区"}
               {item.hint ? ` · ${item.hint}` : ""}
               {item.note.link !== item.note.name ? ` · ${item.note.link}` : ""}
             </span>
@@ -217,6 +238,17 @@ function renderMenu({ ranked, active, status, message, onHover, onPick }) {
       <div className="wlc-hint">↑↓ 选择 · Enter 插入 · Esc 关闭</div>
     </>
   );
+}
+
+function indexMessage(payload) {
+  if (payload?.status === "no-workspace") {
+    return "这个会话还没有工作区。可以在设置 → 双链补全里添加 Obsidian 仓库。";
+  }
+  if (payload?.status === "no-vaults") {
+    return "还没有笔记来源。打开设置 → 双链补全，添加 Obsidian 仓库。";
+  }
+  const warning = Array.isArray(payload?.warnings) ? payload.warnings.find((item) => typeof item === "string") : "";
+  return warning || "";
 }
 
 function readCache(sessionId) {
