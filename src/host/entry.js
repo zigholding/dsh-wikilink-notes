@@ -19,8 +19,9 @@ import {
 export const name = "dsh-wikilink-completion";
 export const inject = ["webServer", "sessions"];
 
-const CACHE_MS = 15_000;
+const CACHE_MS = 60_000;
 const cache = new Map();
+const pending = new Map();
 
 /**
  * @param {import("@deepseek-ai/cordis").Context} ctx
@@ -145,15 +146,21 @@ async function handleSettings(ctx, req, res, file) {
 async function cachedNotes(settings, cwd, maxNotes) {
   const key = JSON.stringify({ settings, cwd, maxNotes });
   const hit = cache.get(key);
-  const now = Date.now();
-  if (hit && now - hit.at < CACHE_MS) return hit.value;
-  const value = await collectNotes(settings, cwd, maxNotes);
-  cache.set(key, { at: now, value });
-  if (cache.size > 40) {
-    const oldest = cache.keys().next().value;
-    if (oldest !== undefined) cache.delete(oldest);
-  }
-  return value;
+  if (hit && Date.now() - hit.at < CACHE_MS) return hit.value;
+  const running = pending.get(key);
+  if (running) return running;
+  const job = collectNotes(settings, cwd, maxNotes).then((value) => {
+    cache.set(key, { at: Date.now(), value });
+    if (cache.size > 40) {
+      const oldest = cache.keys().next().value;
+      if (oldest !== undefined) cache.delete(oldest);
+    }
+    return value;
+  }).finally(() => {
+    if (pending.get(key) === job) pending.delete(key);
+  });
+  pending.set(key, job);
+  return job;
 }
 
 /**

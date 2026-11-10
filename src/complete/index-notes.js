@@ -3,7 +3,7 @@
  * The walk stays inside the real path of `root`, skips symlinks and hidden
  * directories, and returns titles only — never file bodies.
  */
-import { opendir, open, realpath } from "node:fs/promises";
+import { open, readdir, realpath } from "node:fs/promises";
 import { basename, extname, join, relative, sep } from "node:path";
 
 const IGNORE = new Set([
@@ -25,55 +25,74 @@ export async function listNotes(root, options = {}) {
   const maxNotes = options.maxNotes ?? 8000;
   const signal = options.signal;
   const resolved = await realpath(root);
-  /** @type {Array<{ name: string, folder: string, relative: string, aliases: string[], heading: string }>} */
-  const found = [];
+  /** @type {Array<{ name: string, folder: string, relative: string, path: string }>} */
+  const files = [];
   const queue = [resolved];
   let truncated = false;
 
   while (queue.length > 0 && !truncated) {
     signal?.throwIfAborted();
-    const dir = queue.shift();
-    if (dir === undefined) break;
-    let handle;
-    try {
-      handle = await opendir(dir);
-    } catch {
-      continue;
-    }
-    try {
-      for (;;) {
-        const dirent = await handle.read();
-        if (dirent === null) break;
-        signal?.throwIfAborted();
-        if (dirent.isSymbolicLink()) continue;
-        if (dirent.name.startsWith(".")) continue;
+    const batch = queue.splice(0, 24);
+    const listings = await Promise.all(batch.map(async (dir) => {
+      try {
+        return { dir, entries: await readdir(dir, { withFileTypes: true }) };
+      } catch {
+        return { dir, entries: [] };
+      }
+    }));
+    for (const { dir, entries } of listings) {
+      for (const dirent of entries) {
+        if (dirent.isSymbolicLink() || dirent.name.startsWith(".")) continue;
         const child = join(dir, dirent.name);
         if (dirent.isDirectory()) {
-          if (IGNORE.has(dirent.name)) continue;
-          queue.push(child);
+          if (!IGNORE.has(dirent.name)) queue.push(child);
           continue;
         }
         if (!dirent.isFile()) continue;
         const ext = extname(dirent.name).toLowerCase();
         if (ext !== ".md" && ext !== ".markdown") continue;
-        const name = basename(dirent.name, extname(dirent.name));
+        const name = basename(dirent.name, ext);
         if (!name || name.length > 180) continue;
         const rel = relative(resolved, child).split(sep).join("/");
         if (rel.startsWith("..") || rel.includes("/../")) continue;
         const folder = rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/")) : "";
-        const meta = await readMeta(child, signal);
-        found.push({ name, folder, relative: rel, aliases: meta.aliases, heading: meta.heading });
-        if (found.length >= maxNotes) {
+        files.push({ name, folder, relative: rel, path: child });
+        if (files.length >= maxNotes) {
           truncated = true;
           break;
         }
       }
-    } finally {
-      await handle.close();
+      if (truncated) break;
     }
   }
 
+  /** @type {Array<{ name: string, folder: string, relative: string, aliases: string[], heading: string }>} */
+  const found = await mapPool(files, 32, async (file) => {
+    const meta = await readMeta(file.path, signal);
+    return { name: file.name, folder: file.folder, relative: file.relative, aliases: meta.aliases, heading: meta.heading };
+  });
   return { notes: assignLinks(found), truncated };
+}
+
+/**
+ * @template T, R
+ * @param {T[]} items
+ * @param {number} limit
+ * @param {(item: T) => Promise<R>} run
+ */
+async function mapPool(items, limit, run) {
+  /** @type {R[]} */
+  const results = new Array(items.length);
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (cursor < items.length) {
+      const index = cursor;
+      cursor += 1;
+      results[index] = await run(items[index]);
+    }
+  });
+  await Promise.all(workers);
+  return results;
 }
 
 /**

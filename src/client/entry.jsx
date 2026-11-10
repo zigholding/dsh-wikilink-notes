@@ -9,7 +9,10 @@ import { findOpenTrigger, replaceTrigger } from "../complete/trigger.js";
 import { SettingsBoundary } from "./settings.jsx";
 
 const STYLE_ID = "dsh-wikilink-completion-style";
+const CACHE_MS = 60_000;
 const noteCache = new Map();
+const inflight = new Map();
+let cacheEpoch = 0;
 
 export const inject = ["slots"];
 
@@ -54,6 +57,7 @@ export function Picker({ sessionId, useInput, inputActions }) {
   const [suppressed, setSuppressed] = useState(false);
   const [active, setActive] = useState(0);
   const [index, setIndex] = useState(() => readCache(sessionId));
+  const [reload, setReload] = useState(0);
 
   useEffect(() => {
     setSuppressed(false);
@@ -76,47 +80,39 @@ export function Picker({ sessionId, useInput, inputActions }) {
 
   useEffect(() => {
     const refresh = () => {
+      cacheEpoch += 1;
       noteCache.clear();
+      inflight.clear();
       setIndex({ status: "idle", notes: [], message: "" });
+      setReload((current) => current + 1);
     };
     window.addEventListener("wlc-settings-saved", refresh);
     return () => window.removeEventListener("wlc-settings-saved", refresh);
   }, []);
+
+  useEffect(() => {
+    if (!sessionId) return undefined;
+    let alive = true;
+    ensureNotes(sessionId, (next) => {
+      if (alive) setIndex((current) => next.status === "loading" && current.notes.length > 0 ? current : next);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [sessionId, reload]);
 
   const trigger = useMemo(() => findOpenTrigger(draft, caret), [draft, caret]);
   const open = !suppressed && trigger !== null && input !== undefined;
 
   useEffect(() => {
     if (!open || !sessionId) return undefined;
-    const cached = readCache(sessionId);
-    if (cached.status === "ready") {
-      setIndex(cached);
-      return undefined;
-    }
-    const controller = new AbortController();
-    setIndex({ status: "loading", notes: [], message: "" });
-    const url = `/api/wikilink-completion/notes?sessionId=${encodeURIComponent(sessionId)}`;
-    fetch(url, { signal: controller.signal, headers: { accept: "application/json" } })
-      .then(async (response) => {
-        if (!response.ok) throw new Error("notes-unavailable");
-        return response.json();
-      })
-      .then((payload) => {
-        const notes = Array.isArray(payload?.notes) ? payload.notes.filter(isNote) : [];
-        const next = {
-          status: payload?.status === "no-workspace" || payload?.status === "no-vaults" ? "empty" : "ready",
-          notes,
-          message: indexMessage(payload),
-        };
-        noteCache.set(sessionId, { at: Date.now(), ...next });
-        if (!controller.signal.aborted) setIndex(next);
-      })
-      .catch((error) => {
-        if (controller.signal.aborted) return;
-        setIndex({ status: "error", notes: [], message: "笔记名称暂时读不出来" });
-        console.error("[wikilink-completion]", error);
-      });
-    return () => controller.abort();
+    let alive = true;
+    ensureNotes(sessionId, (next) => {
+      if (alive) setIndex((current) => next.status === "loading" && current.notes.length > 0 ? current : next);
+    });
+    return () => {
+      alive = false;
+    };
   }, [open, sessionId]);
 
   const ranked = useMemo(
@@ -259,10 +255,50 @@ function indexMessage(payload) {
 
 function readCache(sessionId) {
   const hit = sessionId ? noteCache.get(sessionId) : undefined;
-  if (!hit || Date.now() - hit.at > 15_000) {
+  if (!hit || Date.now() - hit.at > CACHE_MS) {
     return { status: "idle", notes: [], message: "" };
   }
   return { status: hit.status, notes: hit.notes, message: hit.message };
+}
+
+function ensureNotes(sessionId, onUpdate) {
+  const generation = cacheEpoch;
+  const cached = readCache(sessionId);
+  if (cached.status === "ready" || cached.status === "empty") {
+    onUpdate(cached);
+    return;
+  }
+  onUpdate({ status: "loading", notes: [], message: "" });
+  let job = inflight.get(sessionId);
+  if (!job) {
+    const url = `/api/wikilink-completion/notes?sessionId=${encodeURIComponent(sessionId)}`;
+    job = fetch(url, { headers: { accept: "application/json" } })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("notes-unavailable");
+        return response.json();
+      })
+      .then((payload) => {
+        const notes = Array.isArray(payload?.notes) ? payload.notes.filter(isNote) : [];
+        const next = {
+          status: payload?.status === "no-workspace" || payload?.status === "no-vaults" ? "empty" : "ready",
+          notes,
+          message: indexMessage(payload),
+        };
+        if (generation === cacheEpoch) noteCache.set(sessionId, { at: Date.now(), ...next });
+        return next;
+      })
+      .catch((error) => {
+        console.error("[wikilink-completion]", error);
+        return { status: "error", notes: [], message: "笔记名称暂时读不出来" };
+      })
+      .finally(() => {
+        if (inflight.get(sessionId) === job) inflight.delete(sessionId);
+      });
+    inflight.set(sessionId, job);
+  }
+  job.then((next) => {
+    if (generation === cacheEpoch) onUpdate(next);
+  });
 }
 
 function isNote(value) {
