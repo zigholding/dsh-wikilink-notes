@@ -27,7 +27,15 @@ Windows 上如果提示找不到 `dsh`，打开应用菜单里的「管理 dsh �
 
 `dsh plugin --profile web add .` 只会进 Web profile，Desktop 里看不到。
 
-默认扫描当前会话工作区里的 `.md` / `.markdown`。打开 DSH 的设置，停在「通用设置」：页面上有「双链补全」，直接勾选是否包含当前工作区，并在文本框里每行写一个 Obsidian 仓库的绝对路径（目录里要有 `.obsidian`），然后点「保存仓库」。本机 Obsidian 已经打开过的库会列出来，点一下就填进文本框。设置写在 `$DSH_HOME/wikilink-completion.json`（没设 `DSH_HOME` 时是 `~/.dsh/wikilink-completion.json`）。「打开配置文件」是 DSH 自己的按钮，不用靠它改仓库。
+默认扫描当前会话工作区里的 `.md` / `.markdown`。打开 DSH 的设置，停在「通用设置」。「打开配置文件」是 DSH 自己的按钮，留在标题栏上。它下面的「双链补全」才是这个插件的表单：勾选是否包含当前工作区，在文本框里每行写一个 Obsidian 仓库的绝对路径（目录里要有 `.obsidian`），然后点「保存仓库」。本机 Obsidian 已经打开过的库会列出来，点一下就填进文本框。设置写在 `$DSH_HOME/wikilink-completion.json`（没设 `DSH_HOME` 时是 `~/.dsh/wikilink-completion.json`）。
+
+如果通用设置里仍然只有「打开配置文件」，说明当前这个界面没有加载到插件。在插件目录再执行一次安装后完全退出应用：
+
+```sh
+dsh plugin --profile web add .
+```
+
+Desktop 若使用单独的 `desktop` profile，把上面的 `web` 换成 `desktop`，用应用自带的 `dsh` 执行。
 
 名称取文件名；前言里的 `aliases` 和第一级标题只用来搜索。同一个库里的同名笔记会插入带文件夹的链接，例如 `[[工作/笔记]]`。不同库里的同名笔记会再带上库名，例如 `[[日记/周会纪要]]`。
 

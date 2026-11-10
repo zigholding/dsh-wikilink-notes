@@ -2,9 +2,27 @@
  * Settings → 双链补全. Paths are sent to the host, which only accepts
  * directories that contain an `.obsidian` folder.
  */
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 
 const EMPTY = { includeWorkspace: true, vaults: [], discovered: [] };
+
+export class SettingsBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: "" };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { error: error instanceof Error ? error.message : String(error) };
+  }
+
+  render() {
+    if (this.state.error) {
+      return React.createElement("p", { className: "wlc-settings-error" }, `双链补全设置没有打开：${this.state.error}`);
+    }
+    return React.createElement(SettingsSection);
+  }
+}
 
 export function SettingsSection() {
   const [settings, setSettings] = useState(EMPTY);

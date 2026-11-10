@@ -6,7 +6,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { rankNotes } from "../complete/rank.js";
 import { findOpenTrigger, replaceTrigger } from "../complete/trigger.js";
-import { SettingsSection } from "./settings.jsx";
+import { SettingsBoundary } from "./settings.jsx";
 
 const STYLE_ID = "dsh-wikilink-completion-style";
 const noteCache = new Map();
@@ -28,20 +28,21 @@ export function apply(ctx) {
       Picker,
     ),
   );
-  registerSettings(ctx, "settings.general.item", { order: 40 });
-  registerSettings(ctx, "settings.section", { order: 48, label: () => "双链补全" });
-  registerSettings(ctx, "settings.plugins.tab", { order: 48, label: () => "双链补全" });
-}
-
-function registerSettings(ctx, name, extra) {
-  ctx.slots.inject(name, () =>
+  ctx.slots.inject("settings.general.item", () =>
+    ctx.slots.register(
+      { name: "settings.general.item", id: "wikilink-completion", order: 30 },
+      () => React.createElement(SettingsBoundary),
+    ),
+  );
+  ctx.slots.inject("settings.section", () =>
     ctx.slots.register(
       {
-        name,
+        name: "settings.section",
         id: "wikilink-completion",
-        ...extra,
+        order: 48,
+        label: () => "双链补全",
       },
-      SettingsSection,
+      () => React.createElement(SettingsBoundary),
     ),
   );
 }
