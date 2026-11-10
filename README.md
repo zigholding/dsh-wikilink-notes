@@ -27,7 +27,7 @@ Windows 上如果提示找不到 `dsh`，打开应用菜单里的「管理 dsh �
 
 `dsh plugin --profile web add .` 只会进 Web profile，Desktop 里看不到。
 
-默认扫描当前会话工作区里的 `.md` / `.markdown`。打开 DSH 的设置，停在「通用设置」。「打开配置文件」是 DSH 自己的按钮，留在标题栏上。它下面的「双链补全」才是这个插件的表单：勾选是否包含当前工作区，在文本框里每行写一个 Obsidian 仓库的绝对路径（目录里要有 `.obsidian`），然后点「保存仓库」。本机 Obsidian 已经打开过的库会列出来，点一下就填进文本框。设置写在 `$DSH_HOME/wikilink-completion.json`（没设 `DSH_HOME` 时是 `~/.dsh/wikilink-completion.json`）。
+默认扫描当前会话工作区里的 `.md` / `.markdown`。打开 DSH 的设置，停在「通用设置」。「打开配置文件」是 DSH 自己的按钮，留在标题栏上。它下面的「双链补全」才是这个插件的表单：勾选是否包含当前工作区；第一个文本框每行写一个本机 Obsidian 仓库的绝对路径（目录里要有 `.obsidian`）；第二个文本框每行写一个 NoteChain 服务地址，例如 `http://192.168.1.8:3000/mcp`。插件会调用该服务的 `obsidian_query_by_datacore`（查询 `@page`）取得笔记名，这样另一台电脑上的库也能补全。然后点「保存」。本机 Obsidian 已经打开过的库会列出来，点一下就填进第一个文本框。设置写在 `$DSH_HOME/wikilink-completion.json`（没设 `DSH_HOME` 时是 `~/.dsh/wikilink-completion.json`）。
 
 如果通用设置里仍然只有「打开配置文件」，说明当前这个界面没有加载到插件。在插件目录再执行一次安装后完全退出应用：
 

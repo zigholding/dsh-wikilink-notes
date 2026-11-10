@@ -5,8 +5,9 @@ runtime contract and verification boundaries there; this repository's own securi
 release rules remain authoritative.
 
 `[[` completion is detected from the composer draft and drawn in `conversation.input.overlay`.
-Note names come from the session workspace and from Obsidian vaults saved in
-`$DSH_HOME/wikilink-completion.json`, via `GET /api/wikilink-completion/notes`. The vault form is
+Note names come from the session workspace, local Obsidian vaults, and NoteChain
+services saved in `$DSH_HOME/wikilink-completion.json`, via `GET /api/wikilink-completion/notes`.
+A NoteChain address is called only as `obsidian_query_by_datacore` with `@page`. The vault form is
 registered on `settings.general.item` so it appears on the general settings page. Vault paths are
 accepted only on `PUT /api/wikilink-completion/settings`, and only when the directory contains
 `.obsidian`. The notes request must not take a filesystem path from the browser.

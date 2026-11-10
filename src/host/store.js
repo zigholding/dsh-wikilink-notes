@@ -5,12 +5,14 @@
 import { mkdir, readFile, realpath, rename, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join } from "node:path";
+import { normalizeServiceUrl } from "./notechain.js";
 
 export const MAX_VAULTS = 16;
 
 export const DEFAULT_SETTINGS = Object.freeze({
   includeWorkspace: true,
   vaults: Object.freeze([]),
+  noteChains: Object.freeze([]),
 });
 
 /**
@@ -33,7 +35,7 @@ export async function readSettings(file) {
     const parsed = JSON.parse(await readFile(file, "utf8"));
     return normalizeSettings(parsed);
   } catch {
-    return { includeWorkspace: true, vaults: [] };
+    return { includeWorkspace: true, vaults: [], noteChains: [] };
   }
 }
 
@@ -68,7 +70,19 @@ export function normalizeSettings(value) {
     vaults.push(path);
     if (vaults.length >= MAX_VAULTS) break;
   }
-  return { includeWorkspace, vaults };
+  const seenServices = new Set();
+  /** @type {string[]} */
+  const noteChains = [];
+  const services = Array.isArray(record.noteChains) ? record.noteChains : [];
+  for (const item of services) {
+    if (typeof item !== "string") continue;
+    const parsed = normalizeServiceUrl(item);
+    if (!parsed.ok || seenServices.has(parsed.url)) continue;
+    seenServices.add(parsed.url);
+    noteChains.push(parsed.url);
+    if (noteChains.length >= 8) break;
+  }
+  return { includeWorkspace, vaults, noteChains };
 }
 
 /**

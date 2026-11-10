@@ -209,7 +209,7 @@ function renderMenu({ ranked, active, status, message, onHover, onPick }) {
     return <div className="wlc-empty">正在读取笔记名称…</div>;
   }
   if (status === "error" || status === "empty") return <div className="wlc-empty">{message}</div>;
-  if (ranked.length === 0) return <div className="wlc-empty">没有匹配的笔记</div>;
+  if (ranked.length === 0) return <div className="wlc-empty">{message || "没有匹配的笔记"}</div>;
   return (
     <>
       {ranked.map((item, index) => (

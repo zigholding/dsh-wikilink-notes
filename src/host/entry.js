@@ -7,6 +7,7 @@ import { realpath } from "node:fs/promises";
 import { basename } from "node:path";
 import { listNotes } from "../complete/index-notes.js";
 import { qualifyNames } from "../complete/sources.js";
+import { normalizeServiceUrl, queryNoteChain, serviceLabel } from "./notechain.js";
 import {
   discoverVaults,
   inspectVault,
@@ -118,9 +119,14 @@ async function handleSettings(ctx, req, res, file) {
   const draft = {
     includeWorkspace: payload?.includeWorkspace !== false,
     vaults: Array.isArray(payload?.vaults) ? payload.vaults : [],
+    noteChains: Array.isArray(payload?.noteChains) ? payload.noteChains : [],
   };
   if (draft.vaults.length > 16) {
     send(res, 400, { error: "最多添加 16 个仓库" });
+    return;
+  }
+  if (draft.noteChains.length > 8) {
+    send(res, 400, { error: "最多添加 8 个 NoteChain 服务" });
     return;
   }
   /** @type {string[]} */
@@ -133,7 +139,17 @@ async function handleSettings(ctx, req, res, file) {
     }
     if (!vaults.includes(inspected.path)) vaults.push(inspected.path);
   }
-  const saved = await writeSettings(file, { includeWorkspace: draft.includeWorkspace, vaults });
+  /** @type {string[]} */
+  const noteChains = [];
+  for (const item of draft.noteChains) {
+    const parsed = normalizeServiceUrl(item);
+    if (!parsed.ok) {
+      send(res, 400, { error: `${item}: ${parsed.error}` });
+      return;
+    }
+    if (!noteChains.includes(parsed.url)) noteChains.push(parsed.url);
+  }
+  const saved = await writeSettings(file, { includeWorkspace: draft.includeWorkspace, vaults, noteChains });
   cache.clear();
   send(res, 200, { ...saved, discovered: await discoverVaults(obsidianConfigPath()) });
 }
@@ -173,7 +189,7 @@ export async function collectNotes(settings, cwd, maxNotes) {
   const sources = [];
   const seen = new Set();
   const warnings = [];
-  for (const path of settings.vaults) {
+  for (const path of settings.vaults ?? []) {
     try {
       const root = await realpath(path);
       if (seen.has(root)) continue;
@@ -191,7 +207,8 @@ export async function collectNotes(settings, cwd, maxNotes) {
       warnings.push("当前工作区读不到");
     }
   }
-  if (sources.length === 0) {
+  const services = Array.isArray(settings.noteChains) ? settings.noteChains : [];
+  if (sources.length === 0 && services.length === 0) {
     return {
       notes: [],
       truncated: false,
@@ -199,6 +216,7 @@ export async function collectNotes(settings, cwd, maxNotes) {
       status: settings.includeWorkspace ? "no-workspace" : "no-vaults",
       includeWorkspace: settings.includeWorkspace,
       vaults: settings.vaults,
+      noteChains: services,
     };
   }
   /** @type {Array<{ name: string, link: string, folder: string, aliases: string[], vault: string }>} */
@@ -217,6 +235,20 @@ export async function collectNotes(settings, cwd, maxNotes) {
       warnings.push(`读不到${label}里的笔记`);
     }
   }
+  for (const service of services) {
+    const label = serviceLabel(service);
+    if (notes.length >= maxNotes) {
+      truncated = true;
+      break;
+    }
+    try {
+      const listed = await queryNoteChain(service, { limit: Math.max(1, maxNotes - notes.length) });
+      for (const note of listed) notes.push({ ...note, vault: label });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "查询失败";
+      warnings.push(`${label}：${message}`);
+    }
+  }
   return {
     notes: qualifyNames(notes),
     truncated,
@@ -224,6 +256,7 @@ export async function collectNotes(settings, cwd, maxNotes) {
     status: "ready",
     includeWorkspace: settings.includeWorkspace,
     vaults: settings.vaults,
+    noteChains: services,
   };
 }
 

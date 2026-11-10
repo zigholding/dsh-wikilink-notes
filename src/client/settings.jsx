@@ -4,7 +4,7 @@
  */
 import React, { useEffect, useState } from "react";
 
-const EMPTY = { includeWorkspace: true, vaults: [], discovered: [] };
+const EMPTY = { includeWorkspace: true, vaults: [], noteChains: [], discovered: [] };
 
 export class SettingsBoundary extends React.Component {
   constructor(props) {
@@ -27,6 +27,7 @@ export class SettingsBoundary extends React.Component {
 export function SettingsSection() {
   const [settings, setSettings] = useState(EMPTY);
   const [text, setText] = useState("");
+  const [services, setServices] = useState("");
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -49,8 +50,15 @@ export function SettingsSection() {
   }, []);
 
   useEffect(() => {
-    if (!dirty) setText(settings.vaults.join("\n"));
-  }, [settings.vaults, dirty]);
+    if (!dirty) {
+      setText(settings.vaults.join("\n"));
+      setServices(settings.noteChains.join("\n"));
+    }
+  }, [settings.vaults, settings.noteChains, dirty]);
+
+  function lines(value) {
+    return value.split(/\r?\n/u).map((line) => line.trim()).filter(Boolean);
+  }
 
   async function save(next) {
     setBusy(true);
@@ -62,6 +70,7 @@ export function SettingsSection() {
         body: JSON.stringify({
           includeWorkspace: next.includeWorkspace,
           vaults: next.vaults,
+          noteChains: next.noteChains,
         }),
       });
       const payload = await response.json().catch(() => ({}));
@@ -83,14 +92,18 @@ export function SettingsSection() {
     <section className="wlc-settings">
       <h3 className="wlc-settings-title">双链补全</h3>
       <p className="wlc-settings-lead">
-        输入 <code>[[</code> 时按这些目录里的笔记名补全。每行写一个 Obsidian 仓库的绝对路径，目录里要有 <code>.obsidian</code>。
+        输入 <code>[[</code> 时按这些来源补全笔记名。本机仓库每行一个绝对路径，目录里要有 <code>.obsidian</code>。另一台电脑上的 Obsidian 填写 NoteChain 的 <code>/mcp</code> 地址。
       </p>
       <label className="wlc-check">
         <input
           type="checkbox"
           checked={settings.includeWorkspace}
           disabled={busy}
-          onChange={(event) => save({ ...settings, includeWorkspace: event.target.checked })}
+          onChange={(event) => save({
+            includeWorkspace: event.target.checked,
+            vaults: lines(text),
+            noteChains: lines(services),
+          })}
         />
         同时包含当前工作区
       </label>
@@ -98,15 +111,18 @@ export function SettingsSection() {
         className="wlc-paths"
         onSubmit={(event) => {
           event.preventDefault();
-          const vaults = text.split(/\r?\n/u).map((line) => line.trim()).filter(Boolean);
-          save({ ...settings, vaults }).then((saved) => {
+          save({
+            includeWorkspace: settings.includeWorkspace,
+            vaults: lines(text),
+            noteChains: lines(services),
+          }).then((saved) => {
             if (saved) setDirty(false);
           });
         }}
       >
         <textarea
           value={text}
-          rows={5}
+          rows={4}
           spellCheck={false}
           aria-label="Obsidian 仓库路径"
           placeholder={"D:\\Notes\\工作\nD:\\Notes\\生活"}
@@ -115,7 +131,18 @@ export function SettingsSection() {
             setText(event.target.value);
           }}
         />
-        <button type="submit" disabled={busy}>保存仓库</button>
+        <textarea
+          value={services}
+          rows={3}
+          spellCheck={false}
+          aria-label="NoteChain 服务地址"
+          placeholder={"http://192.168.1.8:3000/mcp"}
+          onChange={(event) => {
+            setDirty(true);
+            setServices(event.target.value);
+          }}
+        />
+        <button type="submit" disabled={busy}>保存</button>
       </form>
       {unused.length > 0 ? (
         <div className="wlc-discovered">
@@ -144,6 +171,7 @@ function normalize(payload) {
   return {
     includeWorkspace: payload?.includeWorkspace !== false,
     vaults: Array.isArray(payload?.vaults) ? payload.vaults.filter((item) => typeof item === "string") : [],
+    noteChains: Array.isArray(payload?.noteChains) ? payload.noteChains.filter((item) => typeof item === "string") : [],
     discovered: Array.isArray(payload?.discovered) ? payload.discovered.filter((item) => typeof item === "string") : [],
   };
 }
