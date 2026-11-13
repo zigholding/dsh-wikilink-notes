@@ -11,6 +11,7 @@ import { SettingsBoundary } from "./settings.jsx";
 
 const STYLE_ID = "dsh-wikilink-completion-style";
 const CACHE_MS = 60_000;
+const REVALIDATE_MS = 750;
 const noteCache = new Map();
 const inflight = new Map();
 let cacheEpoch = 0;
@@ -95,8 +96,8 @@ export function Picker({ sessionId, useInput, inputActions }) {
     if (!sessionId) return undefined;
     let alive = true;
     ensureNotes(sessionId, (next) => {
-      if (alive) setIndex((current) => next.status === "loading" && current.notes.length > 0 ? current : next);
-    });
+      if (alive) setIndex((current) => keepNotes(current, next));
+    }, true);
     return () => {
       alive = false;
     };
@@ -108,11 +109,16 @@ export function Picker({ sessionId, useInput, inputActions }) {
   useEffect(() => {
     if (!open || !sessionId) return undefined;
     let alive = true;
-    ensureNotes(sessionId, (next) => {
-      if (alive) setIndex((current) => next.status === "loading" && current.notes.length > 0 ? current : next);
-    });
+    const pull = () => {
+      ensureNotes(sessionId, (next) => {
+        if (alive) setIndex((current) => keepNotes(current, next));
+      }, true);
+    };
+    pull();
+    const timer = setInterval(pull, 3000);
     return () => {
       alive = false;
+      clearInterval(timer);
     };
   }, [open, sessionId]);
 
@@ -257,6 +263,13 @@ function indexMessage(payload) {
   return warning || "";
 }
 
+function keepNotes(current, next) {
+  if ((next.status === "loading" || next.status === "error") && current.notes.length > 0) {
+    return next.status === "error" ? { ...current, message: next.message } : current;
+  }
+  return next;
+}
+
 function readCache(sessionId) {
   const hit = sessionId ? noteCache.get(sessionId) : undefined;
   if (!hit || Date.now() - hit.at > CACHE_MS) {
@@ -265,14 +278,15 @@ function readCache(sessionId) {
   return { status: hit.status, notes: hit.notes, message: hit.message };
 }
 
-function ensureNotes(sessionId, onUpdate) {
+function ensureNotes(sessionId, onUpdate, revalidate = false) {
   const generation = cacheEpoch;
+  const hit = sessionId ? noteCache.get(sessionId) : undefined;
   const cached = readCache(sessionId);
-  if (cached.status === "ready" || cached.status === "empty") {
-    onUpdate(cached);
-    return;
-  }
-  onUpdate({ status: "loading", notes: [], message: "" });
+  const usable = cached.status === "ready" || cached.status === "empty";
+  if (usable) onUpdate(cached);
+  else onUpdate({ status: "loading", notes: [], message: "" });
+  if (usable && !revalidate) return;
+  if (usable && hit && Date.now() - hit.at < REVALIDATE_MS) return;
   let job = inflight.get(sessionId);
   if (!job) {
     const url = `/api/wikilink-completion/notes?sessionId=${encodeURIComponent(sessionId)}`;

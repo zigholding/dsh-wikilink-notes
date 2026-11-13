@@ -21,7 +21,7 @@ import {
 export const name = "dsh-wikilink-completion";
 export const inject = ["webServer", "sessions"];
 
-const CACHE_MS = 60_000;
+const CACHE_MS = 750;
 const cache = new Map();
 const pending = new Map();
 

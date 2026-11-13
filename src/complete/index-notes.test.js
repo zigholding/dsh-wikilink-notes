@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rename, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -47,4 +47,10 @@ test("indexes markdown names and disambiguates duplicates", async () => {
   assert.ok(byName["笔记"]);
   assert.equal(notes.some((note) => note.name === "隐藏" || note.name === "依赖"), false);
   assert.equal(notes.filter((note) => note.name === "曼谷").length, 1);
+
+  await rename(join(root, "旅行", "曼谷.md"), join(root, "旅行", "清迈.md"));
+  const renamed = await listNotes(root);
+  assert.equal(renamed.notes.some((note) => note.name === "曼谷"), false);
+  assert.equal(renamed.notes.some((note) => note.name === "清迈" && note.folder === "旅行"), true);
+  assert.equal(renamed.notes.some((note) => note.name === "周会纪要"), true);
 });

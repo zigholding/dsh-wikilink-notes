@@ -3,8 +3,8 @@
  * The walk stays inside the real path of `root`, skips symlinks and hidden
  * directories, and returns titles only — never file bodies.
  */
-import { open, readdir, realpath } from "node:fs/promises";
-import { basename, extname, join, relative, sep } from "node:path";
+import { open, readdir, realpath, stat } from "node:fs/promises";
+import { basename, extname, join } from "node:path";
 
 const IGNORE = new Set([
   ".git",
@@ -17,61 +17,177 @@ const IGNORE = new Set([
   "coverage",
 ]);
 
+/** @type {Map<string, DirNode>} */
+const trees = new Map();
+/** @type {Map<string, Promise<void>>} */
+const chains = new Map();
+
+/**
+ * Cached file bodies, keyed by filename inside one directory.
+ * Listings are read again on every refresh so a rename shows up immediately.
+ * Frontmatter is reread only when the file's mtime or size changed.
+ * @typedef {{
+ *   files: Map<string, FileRecord>,
+ *   subdirs: Map<string, DirNode>,
+ * }} DirNode
+ * @typedef {{
+ *   name: string,
+ *   folder: string,
+ *   relative: string,
+ *   path: string,
+ *   mtimeMs: number,
+ *   size: number,
+ *   aliases: string[],
+ *   heading: string,
+ * }} FileRecord
+ */
+
 /**
  * @param {string} root
  * @param {{ maxNotes?: number, signal?: AbortSignal }} [options]
  */
 export async function listNotes(root, options = {}) {
-  const maxNotes = options.maxNotes ?? 8000;
-  const signal = options.signal;
   const resolved = await realpath(root);
-  /** @type {Array<{ name: string, folder: string, relative: string, path: string }>} */
-  const files = [];
-  const queue = [resolved];
-  let truncated = false;
+  const previous = chains.get(resolved) ?? Promise.resolve();
+  const job = previous.catch(() => {}).then(() => scanRoot(resolved, options));
+  chains.set(resolved, job.then(() => {}, () => {}));
+  return job;
+}
 
-  while (queue.length > 0 && !truncated) {
-    signal?.throwIfAborted();
-    const batch = queue.splice(0, 24);
-    const listings = await Promise.all(batch.map(async (dir) => {
-      try {
-        return { dir, entries: await readdir(dir, { withFileTypes: true }) };
-      } catch {
-        return { dir, entries: [] };
-      }
-    }));
-    for (const { dir, entries } of listings) {
-      for (const dirent of entries) {
-        if (dirent.isSymbolicLink() || dirent.name.startsWith(".")) continue;
-        const child = join(dir, dirent.name);
-        if (dirent.isDirectory()) {
-          if (!IGNORE.has(dirent.name)) queue.push(child);
-          continue;
-        }
-        if (!dirent.isFile()) continue;
-        const ext = extname(dirent.name).toLowerCase();
-        if (ext !== ".md" && ext !== ".markdown") continue;
-        const name = basename(dirent.name, ext);
-        if (!name || name.length > 180) continue;
-        const rel = relative(resolved, child).split(sep).join("/");
-        if (rel.startsWith("..") || rel.includes("/../")) continue;
-        const folder = rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/")) : "";
-        files.push({ name, folder, relative: rel, path: child });
-        if (files.length >= maxNotes) {
-          truncated = true;
-          break;
-        }
-      }
-      if (truncated) break;
+/**
+ * @param {string} resolved
+ * @param {{ maxNotes?: number, signal?: AbortSignal }} options
+ */
+async function scanRoot(resolved, options) {
+  const maxNotes = options.maxNotes ?? 8000;
+  const scanned = await readDirNode(resolved, "", trees.get(resolved), options.signal, maxNotes);
+  if (scanned.truncated) trees.delete(resolved);
+  else trees.set(resolved, scanned.node);
+  /** @type {FileRecord[]} */
+  const records = [];
+  flatten(scanned.node, records);
+  return { notes: assignLinks(records), truncated: scanned.truncated };
+}
+
+/**
+ * @param {string} dir
+ * @param {string} relativeDir
+ * @param {DirNode | undefined} cached
+ * @param {AbortSignal | undefined} signal
+ * @param {number} maxNotes
+ * @returns {Promise<{ node: DirNode, count: number, truncated: boolean }>}
+ */
+async function readDirNode(dir, relativeDir, cached, signal, maxNotes) {
+  signal?.throwIfAborted();
+  let entries = [];
+  try {
+    entries = await readdir(dir, { withFileTypes: true });
+  } catch {
+    return emptyNode();
+  }
+  /** @type {string[]} */
+  const fileNames = [];
+  /** @type {string[]} */
+  const dirNames = [];
+  for (const dirent of entries) {
+    if (dirent.isSymbolicLink() || dirent.name.startsWith(".")) continue;
+    if (dirent.isDirectory()) {
+      if (!IGNORE.has(dirent.name)) dirNames.push(dirent.name);
+      continue;
     }
+    if (!dirent.isFile()) continue;
+    const ext = extname(dirent.name).toLowerCase();
+    if (ext !== ".md" && ext !== ".markdown") continue;
+    fileNames.push(dirent.name);
   }
 
-  /** @type {Array<{ name: string, folder: string, relative: string, aliases: string[], heading: string }>} */
-  const found = await mapPool(files, 32, async (file) => {
-    const meta = await readMeta(file.path, signal);
-    return { name: file.name, folder: file.folder, relative: file.relative, aliases: meta.aliases, heading: meta.heading };
-  });
-  return { notes: assignLinks(found), truncated };
+  let truncated = false;
+  /** @type {string[]} */
+  const selected = [];
+  for (const name of fileNames) {
+    if (selected.length >= maxNotes) {
+      truncated = true;
+      break;
+    }
+    selected.push(name);
+  }
+  const loaded = await mapPool(selected, 32, async (name) => loadFile(dir, relativeDir, name, cached, signal));
+  /** @type {Map<string, FileRecord>} */
+  const files = new Map();
+  for (const record of loaded) {
+    if (record) files.set(basename(record.path), record);
+  }
+
+  /** @type {Map<string, DirNode>} */
+  const subdirs = new Map();
+  let count = files.size;
+  for (const name of dirNames) {
+    if (count >= maxNotes) {
+      truncated = true;
+      break;
+    }
+    const next = await readDirNode(join(dir, name), joinRel(relativeDir, name), cached?.subdirs.get(name), signal, maxNotes - count);
+    subdirs.set(name, next.node);
+    count += next.count;
+    if (next.truncated) truncated = true;
+  }
+  return { node: { files, subdirs }, count, truncated };
+}
+
+/** @returns {{ node: DirNode, count: number, truncated: boolean }} */
+function emptyNode() {
+  return { node: { files: new Map(), subdirs: new Map() }, count: 0, truncated: false };
+}
+
+/**
+ * @param {string} dir
+ * @param {string} relativeDir
+ * @param {string} filename
+ * @param {DirNode | undefined} cached
+ * @param {AbortSignal | undefined} signal
+ * @returns {Promise<FileRecord | null>}
+ */
+async function loadFile(dir, relativeDir, filename, cached, signal) {
+  const ext = extname(filename).toLowerCase();
+  const name = basename(filename, ext);
+  if (!name || name.length > 180) return null;
+  const path = join(dir, filename);
+  const rel = joinRel(relativeDir, filename);
+  if (rel.startsWith("..") || rel.includes("/../")) return null;
+  const folder = relativeDir;
+  let info;
+  try {
+    info = await stat(path);
+  } catch {
+    return null;
+  }
+  const mtimeMs = Math.round(info.mtimeMs);
+  const previous = cached?.files.get(filename);
+  if (previous && previous.mtimeMs === mtimeMs && previous.size === info.size && previous.relative === rel) {
+    return previous;
+  }
+  const meta = await readMeta(path, signal);
+  return {
+    name,
+    folder,
+    relative: rel,
+    path,
+    mtimeMs,
+    size: info.size,
+    aliases: meta.aliases,
+    heading: meta.heading,
+  };
+}
+
+/** @param {DirNode} node @param {FileRecord[]} out */
+function flatten(node, out) {
+  for (const file of node.files.values()) out.push(file);
+  for (const child of node.subdirs.values()) flatten(child, out);
+}
+
+/** @param {string} dir @param {string} name */
+function joinRel(dir, name) {
+  return dir ? `${dir}/${name}` : name;
 }
 
 /**
